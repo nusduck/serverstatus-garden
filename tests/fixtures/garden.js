@@ -1,0 +1,11 @@
+// Intentionally fictional fixtures. Never presented as live telemetry.
+export const servers = [
+{id:'01',name:'CloudCone · 洛杉矶',region:'北美',code:'US / LOS ANGELES',role:'花园主站 · Web & RSS',status:'online',cpu:18,memory:42,disk:41,down:1.24,up:0.38,uptime:'68 天 14 小时',spec:'2 vCPU / 2 GB',os:'Debian 12',latency:168,history:[12,16,14,22,18,15,25,21,18,20,15,18]},
+{id:'02',name:'V6 Node · 香港',region:'亚太',code:'HK / HONG KONG',role:'实验温室 · Agents & API',status:'online',cpu:36,memory:64,disk:53,down:3.62,up:1.86,uptime:'24 天 08 小时',spec:'4 vCPU / 8 GB',os:'Debian 12',latency:32,history:[22,28,36,31,48,33,28,42,35,26,40,36]},
+{id:'03',name:'Edge Pod · 东京',region:'亚太',code:'JP / TOKYO',role:'边缘节点 · Relay',status:'online',cpu:9,memory:28,disk:22,down:0.18,up:0.06,uptime:'112 天 03 小时',spec:'1 vCPU / 1 GB',os:'Ubuntu 24.04',latency:54,history:[8,12,10,16,8,6,11,9,14,7,11,9]},
+{id:'04',name:'Tiny Lab · 新加坡',region:'亚太',code:'SG / SINGAPORE',role:'育苗室 · Development',status:'warning',cpu:84,memory:88,disk:67,down:2.15,up:0.72,uptime:'06 天 19 小时',spec:'2 vCPU / 2 GB',os:'Debian 12',latency:76,history:[42,51,48,62,58,74,69,82,78,91,86,84]},
+{id:'05',name:'Archive · 法兰克福',region:'欧洲',code:'DE / FRANKFURT',role:'种子库 · Backup',status:'offline',cpu:null,memory:null,disk:null,down:null,up:null,uptime:'—',spec:'2 vCPU / 4 GB',os:'Debian 12',latency:null,history:[]}
+];
+export function selectServers(items,query='',region='全部',status='all',sort='name') {const q=query.trim().toLowerCase();return items.filter(s=>(region==='全部'||s.region===region)&&(status==='all'||s.status===status)&&[s.name,s.role,s.code,s.os].join(' ').toLowerCase().includes(q)).sort((a,b)=>sort==='cpu'?(b.cpu??-1)-(a.cpu??-1):(b.weight??0)-(a.weight??0)||a.id.localeCompare(b.id));}
+export function summarize(items){return {total:items.length,online:items.filter(s=>['online','warning','unknown'].includes(s.status)).length,stale:items.filter(s=>s.status==='stale').length,measured:items.filter(s=>s.down!==null&&s.down!==undefined).length,warning:items.filter(s=>s.status==='warning').length,offline:items.filter(s=>s.status==='offline').length,down:items.reduce((n,s)=>n+(s.down??0),0),up:items.reduce((n,s)=>n+(s.up??0),0)}}
+export function spark(values){return values.map((v,i)=>`${i*100/Math.max(1,values.length-1)},${40-v*.35}`).join(' ')}

@@ -1,0 +1,11 @@
+[Unit]
+Description=Collect Server Garden history every ten seconds after completion
+
+[Timer]
+OnBootSec=30s
+OnUnitInactiveSec=10s
+AccuracySec=1s
+Unit=server-garden-history.service
+
+[Install]
+WantedBy=timers.target

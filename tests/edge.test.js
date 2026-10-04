@@ -1,0 +1,4 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import * as live from '../src/live.js';
+test('individual heartbeat expires even if global payload is fresh',()=>{assert.equal(typeof live.expireRows,'function');const s=live.expireRows([{status:'online',latest:950,cpu:20,memory:30,disk:40,history:[20]}],1000,1011)[0];assert.equal(s.status,'stale');assert.equal(s.cpu,null);assert.deepEqual(s.history,[])});
+test('fresh connected node with missing resources is unknown not healthy',()=>{const s=live.normalizeStats({updated:1000,servers:[{name:'x',online4:true,latest_ts:1000}]},1000)[0];assert.equal(s.status,'unknown')});
+test('removed selection is identified for modal closure',()=>{assert.equal(typeof live.selectionMissing,'function');assert.equal(live.selectionMissing('gone',[{id:'here'}]),true);assert.equal(live.selectionMissing(null,[]),false);assert.equal(live.selectionMissing('here',[{id:'here'}]),false)});
