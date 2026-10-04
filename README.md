@@ -32,6 +32,7 @@ npm run dev
 - `tests/`：前端行为、真实 Vue 渲染、构建产物和样式回归测试；虚构 fixtures 仅供测试。
 - `history/`：Python 采集器、测试和 systemd service/timer 模板。
 - `design/garden-v5/`：最终确认的独立参考稿，含演示/快照数据，**不是生产前端**。
+- `design/garden-v6/`：V6 重构原型（控制台式高密度布局：节点矩阵 + 详情面板 + 热力图 + 状态变化），全部为模拟数据，**不是生产前端**。
 - `public/`：品牌图标。
 
 ## 数据与单位
