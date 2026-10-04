@@ -1,3 +1,3 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
-const chart=readFileSync(new URL('../src/HistoryChart.vue',import.meta.url),'utf8'),app=readFileSync(new URL('../src/App.vue',import.meta.url),'utf8');
-test('history measures visible plot after native dialog opens, not only before opening',()=>{assert.match(chart,/defineExpose\(\{resize\}\)/);assert.match(chart,/getBoundingClientRect\(\)\.width/);assert.match(app,/dialog\.value\.showModal\(\);historyChart\.value\?\.resize\(\)/)});
+const read=f=>readFileSync(new URL('../src/'+f,import.meta.url),'utf8');const chart=read('HistoryChart.vue'),inspector=read('Inspector.vue'),app=read('App.vue');
+test('history measures visible plot after the sheet opens, not only before opening',()=>{assert.match(chart,/defineExpose\(\{resize\}\)/);assert.match(chart,/getBoundingClientRect\(\)\.width/);assert.match(inspector,/defineExpose\(\{resize:\(\)=>charts\.value\.forEach\(c=>c\?\.resize\(\)\)\}\)/);assert.match(app,/dialog\.value\.showModal\(\);inspector\.value\?\.resize\(\)/)});

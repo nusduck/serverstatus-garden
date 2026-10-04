@@ -1,0 +1,741 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Server Garden V6</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout concept: an instrument console. Sticky masthead, a fleet strip of six readings,
+   then a dense node matrix beside a pinned inspector; a fleet heatmap and event log close the page.
+   原型：独立参考稿，全部为模拟数据，不是生产前端。 */
+:root{
+  --bg:#EBEFEA; --surface:#F8FAF7; --surface-2:#E2E8E1; --ink:#14201A; --ink-2:#3A473F; --muted:#66736B;
+  --line:#D2DAD2; --line-strong:#B5C1B7; --accent:#2D6A4B; --on-accent:#F4FAF5;
+  --ok:#4E8A65; --slow:#5784A7; --lightloss:#B48E3B; --loss:#BA6646; --fail:#AE3B3B; --unknown:#BAC1B8;
+  --c-ct:#3A72A8; --c-cu:#C0583A; --c-cm:#258F7E; --c-cpu:#2D6A4B; --c-mem:#5867AA; --c-disk:#9474A8;
+  --c-rx:#2D6A4B; --c-tx:#B48E3B; --heat-lo:#E2E8E1; --tip-bg:#14201A; --tip-fg:#EEF3EF;
+  --f-display:"Bricolage Grotesque","IBM Plex Sans","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans","PingFang SC","Noto Sans SC","Microsoft YaHei",system-ui,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  --r:7px; --gut:clamp(16px,2.2vw,32px); --top:56px;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0E1311; --surface:#151C18; --surface-2:#1D2621; --ink:#E2EAE4; --ink-2:#B7C4BB; --muted:#84928A;
+  --line:#253029; --line-strong:#35433A; --accent:#86C9A0; --on-accent:#0E1311;
+  --ok:#7BBD92; --slow:#82AFD1; --lightloss:#D7B363; --loss:#DF8C6B; --fail:#EA7979; --unknown:#38433C;
+  --c-ct:#7CADDC; --c-cu:#E8906F; --c-cm:#69C8B6; --c-cpu:#86C9A0; --c-mem:#9DACE5; --c-disk:#C5A7D8;
+  --c-rx:#86C9A0; --c-tx:#D7B363; --heat-lo:#1A231E; --tip-bg:#E2EAE4; --tip-fg:#0E1311; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0E1311; --surface:#151C18; --surface-2:#1D2621; --ink:#E2EAE4; --ink-2:#B7C4BB; --muted:#84928A;
+  --line:#253029; --line-strong:#35433A; --accent:#86C9A0; --on-accent:#0E1311;
+  --ok:#7BBD92; --slow:#82AFD1; --lightloss:#D7B363; --loss:#DF8C6B; --fail:#EA7979; --unknown:#38433C;
+  --c-ct:#7CADDC; --c-cu:#E8906F; --c-cm:#69C8B6; --c-cpu:#86C9A0; --c-mem:#9DACE5; --c-disk:#C5A7D8;
+  --c-rx:#86C9A0; --c-tx:#D7B363; --heat-lo:#1A231E; --tip-bg:#E2EAE4; --tip-fg:#0E1311; color-scheme:dark}
+
+*{box-sizing:border-box}
+html{background:var(--bg)}
+body{margin:0;background:var(--bg);color:var(--ink);font:13px/1.45 var(--f-body);-webkit-font-smoothing:antialiased;font-synthesis:none}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer;background:none;border:0;padding:0}
+a{color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+[hidden]{display:none!important}
+.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.num small,.unit{font-family:var(--f-body);font-size:.78em;color:var(--muted);letter-spacing:0;margin-left:1px}
+.label{font-size:11px;color:var(--muted);letter-spacing:.02em}
+.caps{font:600 10px/1.4 var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.wrap{max-width:1680px;margin:0 auto;padding-inline:var(--gut)}
+
+/* Masthead */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:30;background:color-mix(in oklab,var(--bg) 88%,transparent);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+.top .wrap{display:flex;align-items:center;gap:14px;height:var(--top)}
+.brand{display:flex;align-items:center;gap:9px;text-decoration:none;white-space:nowrap}
+.brand svg{width:26px;height:26px;color:var(--ink)}
+.brand b{font:800 17px/1 var(--f-display);letter-spacing:-.04em}
+.brand span{font:500 11px/1 var(--f-mono);color:var(--muted);letter-spacing:.06em;padding-left:9px;border-left:1px solid var(--line-strong)}
+.proto{font:600 10px/1 var(--f-mono);letter-spacing:.08em;color:var(--lightloss);border:1px dashed currentColor;border-radius:99px;padding:4px 8px;white-space:nowrap}
+.pulse{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-2);white-space:nowrap}
+.pulse svg{width:18px;height:18px;transform:rotate(-90deg)}
+.pulse .track{fill:none;stroke:var(--line-strong);stroke-width:2}
+.pulse .ring{fill:none;stroke:var(--accent);stroke-width:2;stroke-dasharray:44;stroke-dashoffset:0;animation:drain 5s linear infinite}
+.pulse .core{fill:var(--accent)}
+@keyframes drain{to{stroke-dashoffset:44}}
+.spacer{flex:1}
+.search{position:relative;width:min(280px,30vw)}
+.search input{width:100%;height:34px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);padding:0 34px 0 32px;outline:none}
+.search input:focus{border-color:var(--accent)}
+.search svg{position:absolute;left:10px;top:10px;width:14px;height:14px;color:var(--muted)}
+.search kbd{position:absolute;right:8px;top:8px;font:500 10px/16px var(--f-mono);color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:0 5px}
+.seg{display:inline-flex;background:var(--surface-2);border-radius:var(--r);padding:3px;gap:2px}
+.seg button{height:28px;padding:0 11px;border-radius:5px;font:500 12px/1 var(--f-mono);color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px color-mix(in oklab,var(--ink) 14%,transparent)}
+.icon-btn{width:34px;height:34px;border:1px solid var(--line);border-radius:var(--r);display:grid;place-items:center;background:var(--surface)}
+.icon-btn svg{width:16px;height:16px}
+
+/* Masthead line */
+.mast{display:flex;align-items:baseline;gap:16px 28px;flex-wrap:wrap;padding-block:22px 16px}
+.mast h1{margin:0;font:800 clamp(28px,3.2vw,40px)/1 var(--f-display);letter-spacing:-.045em;text-wrap:balance}
+.mast h1 i{font-style:normal;color:var(--accent)}
+.mast p{margin:0;color:var(--muted);font-size:13px;max-width:62ch}
+.mast .meta{margin-left:auto;display:flex;gap:18px;font-size:11px;color:var(--muted)}
+.mast .meta b{color:var(--ink);font-weight:500}
+
+/* Fleet strip */
+.band{display:grid;grid-template-columns:1.05fr 1.15fr 1fr 1.35fr 1.2fr 1.25fr;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);margin-bottom:16px}
+.cell{padding:13px 16px 12px;min-width:0;border-left:1px solid var(--line);display:flex;flex-direction:column;gap:6px}
+.cell:first-child{border-left:0}
+.cell .big{font:700 30px/1 var(--f-display);letter-spacing:-.04em;font-variant-numeric:tabular-nums;display:flex;align-items:baseline;gap:6px}
+.cell .big small{font:500 13px/1 var(--f-body);color:var(--muted);letter-spacing:0}
+.cell .row2{display:flex;align-items:end;justify-content:space-between;gap:10px;min-height:26px}
+.dots{display:flex;flex-wrap:wrap;gap:4px}
+.dots i{width:9px;height:9px;border-radius:2px;background:var(--ok)}
+.chips{display:flex;flex-direction:column;gap:2px;font-size:11px;color:var(--ink-2);min-width:0}
+.chips span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chips em{font-style:normal;color:var(--muted)}
+.ctr{display:grid;grid-template-columns:28px 1fr 52px;align-items:center;gap:6px;font-size:11px}
+.ctr .bar{height:5px;background:var(--surface-2);border-radius:3px;position:relative;overflow:hidden}
+.ctr .bar i{position:absolute;inset:0 auto 0 0;border-radius:3px}
+.ctr .bar:after{content:"";position:absolute;left:60%;top:-2px;bottom:-2px;width:1px;background:var(--line-strong)}
+.ctr .num{text-align:right}
+.dist{display:flex;height:8px;border-radius:3px;overflow:hidden;gap:1px}
+.legend{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:10.5px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:4px}
+.legend i{width:8px;height:8px;border-radius:2px}
+svg.spark{display:block;overflow:visible}
+
+/* Main layout */
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 430px;gap:16px;align-items:start}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);min-width:0}
+.panel-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid var(--line)}
+.panel-head h2{margin:0 8px 0 2px;font:700 15px/1 var(--f-display);letter-spacing:-.02em}
+.pills{display:flex;gap:4px;flex-wrap:wrap}
+.pill{white-space:nowrap;height:26px;padding:0 10px;border:1px solid var(--line);border-radius:99px;font-size:12px;color:var(--ink-2);display:inline-flex;align-items:center;gap:6px}
+.pill b{font:500 11px var(--f-mono);color:var(--muted)}
+.pill[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.pill[aria-pressed="true"] b{color:inherit;opacity:.7}
+.pill .sw{width:6px;height:6px;border-radius:50%}
+.sel{height:26px;border:1px solid var(--line);border-radius:99px;background:var(--surface);padding:0 10px;font-size:12px;color:var(--ink-2)}
+.panel-head .right{margin-left:auto;display:flex;gap:8px;align-items:center}
+
+/* Node matrix */
+.mx{--cols:minmax(178px,1.25fr) 186px 132px minmax(232px,2fr) 76px}
+.mx-h,.mx-r{display:grid;grid-template-columns:var(--cols);gap:14px;align-items:center;padding:0 12px}
+.mx-h{position:sticky;top:calc(var(--top) + env(safe-area-inset-top,0px));z-index:5;background:var(--surface);height:30px;border-bottom:1px solid var(--line);font-size:11px;color:var(--muted)}
+.mx-h .res,.res{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.mx-h .qh{display:grid;grid-template-columns:16px 1fr 46px 40px;gap:6px}
+.mx-h .qh span:nth-child(n+3),.q-line .num{text-align:right}
+.grp{display:flex;align-items:center;gap:10px;padding:14px 12px 6px;font-size:11px;color:var(--muted)}
+.grp b{font:700 12px var(--f-display);color:var(--ink);letter-spacing:.01em}
+.grp hr{flex:1;border:0;border-top:1px solid var(--line);margin:0}
+.mx-r{min-height:58px;padding-block:7px;border-bottom:1px solid color-mix(in oklab,var(--line) 60%,transparent);cursor:pointer;position:relative;transition:background .12s}
+.mx-r:hover{background:color-mix(in oklab,var(--surface-2) 55%,transparent)}
+.mx-r[aria-selected="true"]{background:var(--surface-2)}
+.mx-r[aria-selected="true"] .nm b{text-decoration:underline;text-decoration-color:var(--accent);text-decoration-thickness:2px;text-underline-offset:3px}
+.mx-r.dim>*:not(.nm){opacity:.42}
+.nm{display:flex;gap:9px;align-items:center;min-width:0}
+.nm>div{min-width:0}
+.nm b{display:block;font-weight:600;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nm .sub{display:block;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.st{flex:none;width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px color-mix(in oklab,var(--ok) 18%,transparent)}
+.st[data-s="attention"],.st[data-s="warning"]{background:var(--lightloss);box-shadow:0 0 0 3px color-mix(in oklab,var(--lightloss) 22%,transparent)}
+.st[data-s="offline"]{background:var(--fail);box-shadow:0 0 0 3px color-mix(in oklab,var(--fail) 20%,transparent)}
+.st[data-s="stale"]{background:transparent;box-shadow:inset 0 0 0 1.5px var(--muted)}
+.tag{font:600 9.5px/1 var(--f-mono);letter-spacing:.06em;padding:3px 5px;border-radius:3px;background:var(--surface-2);color:var(--muted);vertical-align:1px;margin-left:5px}
+.tag.warn{color:var(--loss);background:color-mix(in oklab,var(--loss) 13%,transparent)}
+.mtr{display:flex;flex-direction:column;gap:4px;min-width:0}
+.mtr .num{font-size:13px}
+.mtr .bar{height:4px;background:var(--surface-2);border-radius:2px;overflow:hidden}
+.mx-r[aria-selected="true"] .mtr .bar{background:var(--bg)}
+.mtr .bar i{display:block;height:100%;border-radius:2px;background:var(--c)}
+.mtr.hot .num{color:var(--loss);font-weight:600}
+.mtr.hot .bar i{background:var(--loss)}
+.net{display:grid;grid-template-columns:auto 1fr;gap:2px 8px;align-items:center;font-size:12px}
+.net .arr{color:var(--muted);font-size:10px}
+.net svg{grid-column:1/-1}
+.qcol{display:flex;flex-direction:column;gap:3px;min-width:0}
+.q-line{display:grid;grid-template-columns:16px 1fr 46px 40px;gap:6px;align-items:center;font-size:11.5px}
+.q-line>span:first-child{font-size:10.5px;color:var(--muted)}
+.q-line .ls{color:var(--muted);text-align:right;font-family:var(--f-mono);font-size:10.5px}
+.q-line .ls.bad{color:var(--loss)}
+.strip{display:flex;gap:1px;height:9px;min-width:0}
+.strip i{flex:1;min-width:0;border-radius:1px;background:var(--ok)}
+.g-normal{background:var(--ok)!important}.g-slow{background:var(--slow)!important}.g-lightloss{background:var(--lightloss)!important}.g-loss{background:var(--loss)!important}.g-failed{background:var(--fail)!important}
+.g-unknown{background:repeating-linear-gradient(135deg,var(--unknown) 0 2px,transparent 2px 4px)!important}
+.upt{display:flex;flex-direction:column;align-items:flex-end;gap:2px;font-size:12px}
+.upt .label{font-size:10.5px}
+
+/* Card view */
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;padding:12px}
+.card{border:1px solid var(--line);border-radius:var(--r);padding:11px 12px;display:flex;flex-direction:column;gap:10px;cursor:pointer;background:var(--surface);text-align:left}
+.card:hover{border-color:var(--line-strong)}
+.card[aria-selected="true"]{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.card .net{grid-template-columns:auto 1fr auto 1fr}
+
+/* Inspector */
+.insp{position:sticky;top:calc(var(--top) + env(safe-area-inset-top,0px) + 12px);max-height:calc(100vh - var(--top) - 24px);overflow:auto;scrollbar-width:thin}
+.ih{padding:14px 16px 12px;border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:flex-start}
+.ih .pod{width:34px;height:34px;flex:none;color:var(--ink)}
+.ih h2{margin:0;font:750 21px/1.1 var(--f-display);letter-spacing:-.035em}
+.ih p{margin:4px 0 0;font-size:11.5px;color:var(--muted)}
+.ih .close{margin-left:auto;display:none}
+.status{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:500;padding:3px 8px 3px 7px;border-radius:99px;background:color-mix(in oklab,var(--ok) 14%,transparent);color:var(--ok);margin-top:8px}
+.status[data-s="attention"],.status[data-s="warning"]{background:color-mix(in oklab,var(--lightloss) 16%,transparent);color:var(--lightloss)}
+.status[data-s="offline"]{background:color-mix(in oklab,var(--fail) 14%,transparent);color:var(--fail)}
+.status[data-s="stale"]{background:var(--surface-2);color:var(--muted)}
+.status:before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--line)}
+.kpi{padding:10px 12px 11px 16px;border-left:1px solid var(--line);display:flex;flex-direction:column;gap:5px}
+.kpi:first-child{border-left:0}
+.kpi .num{font-size:19px;font-weight:500}
+.kpi .bar{height:3px;background:var(--surface-2);border-radius:2px;overflow:hidden}
+.kpi .bar i{display:block;height:100%;background:var(--c)}
+.sec{padding:13px 16px 14px;border-bottom:1px solid var(--line)}
+.sec:last-child{border-bottom:0}
+.sec-h{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.sec-h h3{margin:0;font:600 12.5px/1 var(--f-body)}
+.sec-h .legend{margin-left:auto}
+.readout{display:flex;gap:4px 12px;flex-wrap:wrap;font-size:11px;color:var(--muted);min-height:17px;margin-top:4px}
+.readout b{color:var(--ink);font-weight:500;font-family:var(--f-mono)}
+.readout .t{color:var(--ink-2);font-family:var(--f-mono)}
+.chart{position:relative;width:100%}
+.chart svg{display:block;width:100%;overflow:visible}
+.chart text{fill:var(--muted);font:10px var(--f-mono)}
+.chart .grid{stroke:var(--line);stroke-width:1}
+.chart .thr{stroke:var(--lightloss);stroke-width:1;stroke-dasharray:3 3}
+.chart .gap{fill:color-mix(in oklab,var(--unknown) 30%,transparent)}
+.chart .xh{stroke:var(--ink-2);stroke-width:1;stroke-dasharray:2 2}
+.big-strips{display:grid;grid-template-columns:28px 1fr;gap:5px 8px;align-items:center;font-size:11px;color:var(--muted)}
+.big-strips .strip{height:13px;gap:1.5px}
+.big-strips .strip i{border-radius:2px}
+.facts{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0;font-size:12px}
+.facts dt{color:var(--muted)}
+.facts dd{margin:0;text-align:right;font-family:var(--f-mono);font-size:11.5px;overflow-wrap:anywhere}
+
+/* Bottom row */
+.lower{display:grid;grid-template-columns:minmax(0,1.75fr) minmax(300px,1fr);gap:16px;margin-top:16px}
+.heat{padding:10px 12px 12px}
+.hm{display:grid;grid-template-columns:118px minmax(0,1fr);gap:2px 10px;align-items:center}
+.hm .nmc{font-size:11px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.hm .cells{display:grid;grid-template-columns:repeat(48,minmax(0,1fr));gap:1.5px;height:15px}
+.hm .cells i{border-radius:2px;min-width:0}
+.hm .axis{display:flex;justify-content:space-between;font:10px var(--f-mono);color:var(--muted);padding-top:4px}
+.scale{display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--muted)}
+.scale span.g{width:90px;height:7px;border-radius:2px}
+.events{list-style:none;margin:0;padding:4px 0;max-height:438px;overflow:auto}
+.events li{display:grid;grid-template-columns:44px 10px minmax(0,1fr);gap:8px;padding:7px 14px;font-size:12px;align-items:baseline;border-bottom:1px solid color-mix(in oklab,var(--line) 55%,transparent)}
+.events li:last-child{border-bottom:0}
+.events time{font:11px var(--f-mono);color:var(--muted)}
+.events .dot{width:7px;height:7px;border-radius:50%;align-self:center}
+.events b{font-weight:600}
+.events .why{color:var(--muted)}
+.foot{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding-block:22px 28px;font-size:11px;color:var(--muted);border-top:1px solid var(--line);margin-top:22px}
+
+.tip{position:fixed;z-index:60;pointer-events:none;background:var(--tip-bg);color:var(--tip-fg);font-size:11.5px;line-height:1.5;padding:7px 9px;border-radius:5px;max-width:280px;box-shadow:0 6px 18px color-mix(in oklab,var(--ink) 25%,transparent)}
+.tip b{font-weight:600}
+.flash{animation:flash .9s ease-out}
+@keyframes flash{from{color:var(--accent)}}
+.scrim{display:none}
+
+@media (max-width:1360px){
+  .layout{grid-template-columns:minmax(0,1fr) 380px}
+  .mx{--cols:minmax(160px,1.2fr) 168px 120px minmax(210px,2fr)}
+  .mx .upt,.mx-h .uh{display:none}
+  .band{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .cell:nth-child(4){border-left:0}
+  .cell:nth-child(n+4){border-top:1px solid var(--line)}
+}
+@media (max-width:1100px){
+  .layout{grid-template-columns:minmax(0,1fr)}
+  .insp{position:fixed;inset:auto 0 0 0;top:auto;max-height:86vh;z-index:50;border-radius:14px 14px 0 0;transform:translateY(105%);transition:transform .25s ease;padding-bottom:env(safe-area-inset-bottom,0px);box-shadow:0 -10px 40px color-mix(in oklab,var(--ink) 25%,transparent)}
+  body.sheet .insp{transform:none}
+  .ih .close{display:grid}
+  .scrim{display:block;position:fixed;inset:0;z-index:45;background:color-mix(in oklab,var(--ink) 40%,transparent);opacity:0;pointer-events:none;transition:opacity .2s}
+  body.sheet .scrim{opacity:1;pointer-events:auto}
+  .lower{grid-template-columns:minmax(0,1fr)}
+  .mast .meta{margin-left:0}
+}
+@media (max-width:760px){
+  .top .wrap{gap:8px}
+  .brand span,.pulse .txt,.search kbd{display:none}
+  .search{width:auto;flex:1}
+  .top .seg{display:none}
+  .proto{display:none}
+  .mrange{display:inline-flex!important}
+  .panel-head .right{margin-left:0;width:100%;flex-wrap:wrap}
+  .panel-head .right .sel{flex:1;min-width:0}
+  .band{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .cell{border-left:1px solid var(--line)!important;border-top:1px solid var(--line)}
+  .cell:nth-child(odd){border-left:0!important}
+  .cell:nth-child(-n+2){border-top:0}
+  .cell .big{font-size:24px}
+  .mx-h{display:none}
+  .mx-r{grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-areas:"nm nm" "res net" "q q";gap:10px 14px;padding-block:12px}
+  .mx-r .nm{grid-area:nm}.mx-r .res{grid-area:res}.mx-r .net{grid-area:net}.mx-r .qcol{grid-area:q}
+  .hm{grid-template-columns:72px minmax(0,1fr)}
+  .hm .cells{grid-template-columns:repeat(24,minmax(0,1fr))}
+  .hm .cells i:nth-child(odd){display:none}
+  .kpis{grid-template-columns:repeat(2,1fr)}
+  .kpi:nth-child(3){border-left:0}
+  .kpi:nth-child(n+3){border-top:1px solid var(--line)}
+}
+.mrange{display:none}
+@media (prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}}
+</style>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#" aria-label="Pod's Garden 首页">
+      <svg viewBox="0 0 128 128" aria-hidden="true"><path fill="currentColor" d="M16 64C16 42 30 30 52 28C62 27 74 28 86 34C104 43 116 52 116 64C116 76 104 85 86 94C74 100 62 101 52 100C30 98 16 86 16 64Z"/><g fill="var(--bg)"><circle cx="42" cy="64" r="8.5"/><circle cx="64" cy="62.5" r="9.5"/><circle cx="86" cy="64" r="8.5"/></g></svg>
+      <b>Server Garden</b><span>POD'S GARDEN</span>
+    </a>
+    <div class="pulse" id="pulse" title="每 5 秒读取一次探针">
+      <svg viewBox="0 0 18 18" aria-hidden="true"><circle class="track" cx="9" cy="9" r="7"/><circle class="ring" id="ring" cx="9" cy="9" r="7"/><circle class="core" cx="9" cy="9" r="2.5"/></svg>
+      <span class="txt">实时 · <span class="num" id="clock">--:--:--</span></span>
+    </div>
+    <span class="proto">原型 · 模拟数据</span>
+    <div class="spacer"></div>
+    <label class="search"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m11 11 3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><input id="q" type="search" placeholder="搜索节点、地域、系统" aria-label="搜索节点" autocomplete="off"><kbd>/</kbd></label>
+    <div class="seg" role="group" aria-label="时间窗口" data-range></div>
+    <button class="icon-btn" id="theme" aria-label="切换深浅主题"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 2a6 6 0 0 1 0 12z" fill="currentColor"/></svg></button>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="mast">
+    <h1>花园里的 <i id="hCount">12</i> 台机器</h1>
+    <p>三网线路质量、资源与流量在同一屏内对照；点击任一节点，在右侧查看完整历史。</p>
+    <div class="meta"><span>上次探针 <b class="num" id="updated">—</b></span><span>历史 <b>服务端 SQLite · 30 s</b></span><span>阈值 <b>300 ms / 5 %</b></span></div>
+  </section>
+
+  <section class="band" id="band" aria-label="全局概览"></section>
+
+  <div class="layout">
+    <section class="panel" aria-label="节点矩阵">
+      <div class="panel-head">
+        <h2>节点矩阵</h2>
+        <div class="pills" id="regions" role="group" aria-label="地域"></div>
+        <div class="right">
+          <div class="seg mrange" role="group" aria-label="时间窗口" data-range></div>
+          <div class="pills" id="statuses" role="group" aria-label="状态"></div>
+          <select class="sel" id="sort" aria-label="排序">
+            <option value="weight">按权重</option><option value="cpu">CPU 从高到低</option><option value="lat">延迟从低到高</option><option value="net">流量从高到低</option><option value="name">按名称</option>
+          </select>
+          <div class="seg" role="group" aria-label="视图" id="view">
+            <button data-v="matrix" aria-pressed="true" aria-label="矩阵视图">矩阵</button><button data-v="cards" aria-pressed="false" aria-label="卡片视图">卡片</button>
+          </div>
+        </div>
+      </div>
+      <div class="mx" id="mx"></div>
+    </section>
+
+    <div class="scrim" id="scrim"></div>
+    <aside class="panel insp" id="insp" aria-label="节点详情" tabindex="-1"></aside>
+  </div>
+
+  <div class="lower">
+    <section class="panel" aria-label="花园热力图">
+      <div class="panel-head">
+        <h2>花园热力</h2>
+        <div class="seg" role="group" aria-label="热力指标" id="heatm">
+          <button data-m="cpu" aria-pressed="true">CPU</button><button data-m="lat" aria-pressed="false">最低延迟</button><button data-m="loss" aria-pressed="false">最大失败率</button>
+        </div>
+        <div class="right scale" id="scale"></div>
+      </div>
+      <div class="heat" id="heat"></div>
+    </section>
+    <section class="panel" aria-label="事件">
+      <div class="panel-head"><h2>状态变化</h2><span class="label" id="evCount"></span></div>
+      <ol class="events" id="events"></ol>
+    </section>
+  </div>
+
+  <footer class="foot"><span>POD'S GARDEN / SERVER OBSERVATORY · V6 原型</span><span>离线、缺失和过期值显示为空白或「—」，不补造数据。</span></footer>
+</main>
+<div class="tip" id="tip" hidden></div>
+
+<script>
+(()=>{
+/* ---------- deterministic mock data ---------- */
+const hash=s=>{let h=2166136261;for(const c of s)h=Math.imul(h^c.charCodeAt(0),16777619);return h>>>0};
+const rng=seed=>()=>{seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296};
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const CARRIERS=[{k:'189',name:'电信',s:'电',c:'--c-ct'},{k:'10010',name:'联通',s:'联',c:'--c-cu'},{k:'10086',name:'移动',s:'移',c:'--c-cm'}];
+const RANGES={'1h':{n:72,step:50,label:'1h'},'24h':{n:96,step:900,label:'24h'},'7d':{n:84,step:7200,label:'7d'}};
+const GAP={'1h':null,'24h':[58,61],'7d':[30,31]};
+const NODES=[
+ {id:'cc-lax',name:'CloudCone',city:'洛杉矶',cc:'US',region:'北美',os:'Debian 12',vcpu:2,ram:2,disk:40,cpu:18,mem:42,dsk:41,rx:1.24,tx:.38,lat:[168,152,181],loss:[0,0,.3],up:'68 天',role:'主站 · Web & RSS',w:100,v6:true,tin:812,tout:244},
+ {id:'v6-hkg',name:'V6 Node',city:'香港',cc:'HK',region:'亚太',os:'Debian 12',vcpu:4,ram:8,disk:80,cpu:36,mem:64,dsk:53,rx:3.62,tx:1.86,lat:[38,31,44],loss:[0,1.6,0],up:'24 天',role:'温室 · Agents & API',w:95,v6:true,lossy:'10010',tin:2304,tout:1176},
+ {id:'edge-tyo',name:'Edge Pod',city:'东京',cc:'JP',region:'亚太',os:'Ubuntu 24.04',vcpu:1,ram:1,disk:20,cpu:9,mem:28,dsk:22,rx:.18,tx:.06,lat:[64,58,92],loss:[0,0,0],up:'112 天',role:'边缘 · Relay',w:90,v6:false,tin:96,tout:41},
+ {id:'lab-sin',name:'Tiny Lab',city:'新加坡',cc:'SG',region:'亚太',os:'Debian 12',vcpu:2,ram:2,disk:40,cpu:62,mem:86,dsk:67,rx:2.15,tx:.72,lat:[88,79,71],loss:[0,0,0],up:'6 天',role:'育苗室 · Dev',w:85,v6:true,ramp:true,tin:640,tout:205},
+ {id:'arc-fra',name:'Archive',city:'法兰克福',cc:'DE',region:'欧洲',os:'Debian 12',vcpu:2,ram:4,disk:500,cpu:6,mem:31,dsk:78,rx:.4,tx:.2,lat:[226,241,262],loss:[0,0,0],up:'—',role:'种子库 · Backup',w:80,v6:false,offline:true,tin:3880,tout:122},
+ {id:'rly-icn',name:'Relay',city:'首尔',cc:'KR',region:'亚太',os:'Alpine 3.20',vcpu:1,ram:1,disk:15,cpu:14,mem:37,dsk:19,rx:.92,tx:.88,lat:[118,322,96],loss:[0,.4,0],up:'41 天',role:'中继 · WireGuard',w:75,v6:true,slow:'10010',tin:402,tout:398},
+ {id:'mir-sjc',name:'Mirror',city:'圣何塞',cc:'US',region:'北美',os:'Debian 12',vcpu:4,ram:4,disk:160,cpu:27,mem:51,dsk:63,rx:5.8,tx:4.9,lat:[154,141,173],loss:[0,0,0],up:'203 天',role:'镜像 · Mirror',w:70,v6:true,tin:6120,tout:5310},
+ {id:'blm-tpe',name:'Bloom',city:'台北',cc:'TW',region:'亚太',os:'Debian 12',vcpu:2,ram:2,disk:30,cpu:21,mem:47,dsk:35,rx:.66,tx:.31,lat:[52,61,58],loss:[0,0,0],up:'17 天',role:'花房 · Bots',w:65,v6:false,tin:188,tout:92},
+ {id:'sdb-ams',name:'Seedbank',city:'阿姆斯特丹',cc:'NL',region:'欧洲',os:'Rocky 9',vcpu:2,ram:4,disk:250,cpu:11,mem:39,dsk:58,rx:.52,tx:.27,lat:[212,198,244],loss:[0,0,0],up:'95 天',role:'冷存 · Object',w:60,v6:true,tin:1250,tout:310},
+ {id:'ltn-lhr',name:'Lantern',city:'伦敦',cc:'GB',region:'欧洲',os:'Debian 11',vcpu:1,ram:1,disk:25,cpu:8,mem:44,dsk:31,rx:.12,tx:.05,lat:[198,205,231],loss:[0,0,0],up:'—',role:'灯塔 · Uptime',w:55,v6:false,stale:true,tin:77,tout:30},
+ {id:'frn-kix',name:'Fern',city:'大阪',cc:'JP',region:'亚太',os:'Ubuntu 22.04',vcpu:2,ram:2,disk:40,cpu:16,mem:33,dsk:28,rx:.81,tx:.22,lat:[71,66,104],loss:[0,0,0],up:'52 天',role:'苗圃 · CI',w:50,v6:true,tin:301,tout:84},
+ {id:'mos-yyz',name:'Moss',city:'多伦多',cc:'CA',region:'北美',os:'Debian 12',vcpu:1,ram:2,disk:30,cpu:12,mem:29,dsk:24,rx:.33,tx:.14,lat:[201,188,214],loss:[0,0,1.2],up:'29 天',role:'苔原 · DNS',w:45,v6:true,tin:122,tout:57}
+];
+const REGIONS=['亚太','北美','欧洲'];
+
+function walk(r,n,base,vol,lo,hi,rev=.18){let v=base+(r()-.5)*vol;const out=[];for(let i=0;i<n;i++){v+=(base-v)*rev+(r()-.5)*vol*2;out.push(clamp(v,lo,hi))}return out}
+function genSeries(node,range){
+  const {n,step}=RANGES[range],r=rng(hash(node.id+range)),end=Math.floor(Date.now()/1000);
+  const t=Array.from({length:n},(_,i)=>end-(n-1-i)*step);
+  const cpuBase=i=>node.ramp?(range==='1h'?44+40*(i/n)**1.6:node.cpu+(i>n*.9?20:0)):node.cpu;
+  const cpu=[];let cv=cpuBase(0);for(let i=0;i<n;i++){const b=cpuBase(i);cv+=(b-cv)*.25+(r()-.5)*8;cpu.push(clamp(cv,1,99))}
+  const mem=walk(r,n,node.mem,1.2,5,99),dsk=walk(r,n,node.dsk,.25,1,99,.4);
+  const diurnal=i=>range==='1h'?1:1+.35*Math.sin(2*Math.PI*((t[i]/3600+8)%24-6)/24);
+  const rx=walk(r,n,node.rx,node.rx*.35,0,1e4).map((v,i)=>v*diurnal(i)),tx=walk(r,n,node.tx,node.tx*.35,0,1e4).map((v,i)=>v*diurnal(i));
+  const lat={},loss={};
+  CARRIERS.forEach((c,ci)=>{const base=node.lat[ci];const l=[],p=[];let v=base;
+    for(let i=0;i<n;i++){v+=(base*diurnal(i)-v)*.3+(r()-.5)*base*.08;let x=v;let q=0;
+      const lossy=node.lossy===c.k,slow=node.slow===c.k;
+      if(r()<(lossy?.14:.025)){x+=60+r()*(lossy?260:180);q=lossy?2+r()*7:r()*2.2}
+      if(slow&&r()<.3)x+=40+r()*60;
+      if(lossy&&r()<.04)q=100;
+      l.push(Math.round(x));p.push(+q.toFixed(1))}
+    lat[c.k]=l;loss[c.k]=p});
+  const conn=walk(r,n,40+node.rx*30,8,2,999).map(Math.round);
+  const s={t,cpu,mem,dsk,rx,tx,lat,loss,conn};
+  const blank=i=>{for(const k of ['cpu','mem','dsk','rx','tx','conn'])s[k][i]=null;CARRIERS.forEach(c=>{s.lat[c.k][i]=null;s.loss[c.k][i]=null})};
+  if(node.offline){const from=Math.floor(n*({'1h':.62,'24h':.975,'7d':.996}[range]));for(let i=from;i<n;i++)blank(i)}
+  if(node.stale){for(let i=n-(range==='1h'?3:1);i<n;i++)blank(i)}
+  const g=GAP[range];if(g)for(let i=g[0];i<=g[1];i++)blank(i);
+  return s;
+}
+const DATA={};for(const k in RANGES){DATA[k]={};for(const nd of NODES)DATA[k][nd.id]=genSeries(nd,k)}
+
+/* ---------- state ---------- */
+const state={range:'1h',region:'all',status:'all',q:'',sort:'weight',view:'matrix',sel:'lab-sin',heat:'cpu'};
+try{const v=localStorage.getItem('sg6-view');if(v)state.view=v;const t=localStorage.getItem('sg6-theme');if(t)document.documentElement.dataset.theme=t}catch{}
+
+const last=a=>{for(let i=a.length-1;i>=0;i--)if(a[i]!=null)return a[i];return null};
+const lastFresh=a=>a[a.length-1];
+const grade=(lat,loss)=>lat==null||loss==null?'unknown':loss>=100?'failed':lat>=1000||loss>=5?'loss':loss>0?'lightloss':lat>=300?'slow':'normal';
+const RANK={normal:0,slow:1,lightloss:2,loss:3,failed:4,unknown:5};
+const GLABEL={normal:'正常',slow:'高延迟',lightloss:'轻微失败',loss:'需留意',failed:'探测失败',unknown:'无有效数据'};
+const SLABEL={online:'正常',attention:'线路需留意',warning:'资源偏高',stale:'数据过期',offline:'已离线'};
+
+function current(nd){
+  const s=DATA['1h'][nd.id];
+  const fresh=!nd.offline&&!nd.stale;
+  const v=k=>fresh?lastFresh(s[k]):null;
+  const q=CARRIERS.map(c=>{const lat=fresh?lastFresh(s.lat[c.k]):null,loss=fresh?lastFresh(s.loss[c.k]):null;return {lat,loss,g:grade(lat,loss)}});
+  const cpu=v('cpu'),mem=v('mem'),dsk=v('dsk');
+  const res=[cpu,mem,dsk].some(x=>x!=null&&x>=80);
+  const qBad=q.some(x=>x.g!=='normal'&&x.g!=='unknown')||binsFor(nd,'1h').some(row=>row.slice(-6).some(b=>b.g==='loss'||b.g==='failed'));
+  const status=nd.offline?'offline':nd.stale?'stale':res?'warning':qBad?'attention':'online';
+  return {cpu,mem,dsk,rx:v('rx'),tx:v('tx'),conn:v('conn'),q,status,fresh,lastSeen:fresh?0:nd.offline?Math.round((Date.now()/1000)-last(s.t.filter((_,i)=>s.cpu[i]!=null))):150};
+}
+function binsFor(nd,range,count=36){
+  const s=DATA[range][nd.id],n=s.t.length,size=n/count;
+  return CARRIERS.map(c=>Array.from({length:count},(_,b)=>{
+    const a=Math.floor(b*size),z=Math.max(a+1,Math.floor((b+1)*size));let worst={g:'normal',lat:null,loss:null},missing=0;
+    for(let i=a;i<z;i++){const g=grade(s.lat[c.k][i],s.loss[c.k][i]);if(g==='unknown'){missing++;continue}
+      if(RANK[g]>=RANK[worst.g]||worst.lat==null)worst={g:RANK[g]>=RANK[worst.g]?g:worst.g,lat:Math.max(worst.lat??0,s.lat[c.k][i]),loss:Math.max(worst.loss??0,s.loss[c.k][i])}}
+    if(missing>(z-a)*.2)worst={g:'unknown',lat:null,loss:null};
+    return {...worst,t0:s.t[a],t1:s.t[z-1]+RANGES[range].step}}));
+}
+
+/* ---------- formatting ---------- */
+const f1=v=>v==null?'—':v.toFixed(1);
+const f0=v=>v==null?'—':Math.round(v).toString();
+const rate=v=>{if(v==null)return ['—',''];if(v>=1)return [v.toFixed(v>=10?1:2),'MiB/s'];return [Math.round(v*1024).toString(),'KiB/s']};
+const rateS=v=>{const [a,b]=rate(v);return a+(b?' '+b:'')};
+const bytesG=v=>v>=1024?(v/1024).toFixed(2)+' TiB':v.toFixed(0)+' GiB';
+const hhmm=t=>new Date(t*1000).toLocaleTimeString('zh-CN',{hour12:false,hour:'2-digit',minute:'2-digit'});
+const hms=t=>new Date(t*1000).toLocaleTimeString('zh-CN',{hour12:false});
+const tlabel=(t,range)=>range==='7d'?new Date(t*1000).toLocaleDateString('zh-CN',{month:'2-digit',day:'2-digit'}):hhmm(t);
+const css=v=>`var(${v})`;
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const $=s=>document.querySelector(s);
+
+/* ---------- small svg helpers ---------- */
+function segs(vals,x,y){let d='',pen=false;vals.forEach((v,i)=>{if(v==null){pen=false;return}d+=(pen?'L':'M')+x(i).toFixed(1)+','+y(v).toFixed(1);pen=true});return d}
+function areas(vals,x,y,base){let d='',run=[];const flush=()=>{if(run.length>1)d+='M'+x(run[0]).toFixed(1)+','+base+run.map(i=>'L'+x(i).toFixed(1)+','+y(vals[i]).toFixed(1)).join('')+'L'+x(run.at(-1)).toFixed(1)+','+base+'Z';run=[]};vals.forEach((v,i)=>v==null?flush():run.push(i));flush();return d}
+function spark(vals,{w=120,h=22,color='--accent',max,fill=true,vals2,color2}={}){
+  const all=vals.concat(vals2||[]).filter(v=>v!=null);if(!all.length)return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><line x1="0" x2="${w}" y1="${h-1}" y2="${h-1}" stroke="var(--line)" stroke-dasharray="2 3"/></svg>`;
+  const m=max??(Math.max(...all)*1.1||1),n=vals.length,x=i=>i*(w-3)/(n-1)+1,y=v=>h-1-(v/m)*(h-3);
+  const lv=last(vals),li=vals.lastIndexOf(lv);
+  let out=`<svg class="spark" width="100%" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">`;
+  if(fill)out+=`<path d="${areas(vals,x,y,h-1)}" fill="${css(color)}" fill-opacity=".14"/>`;
+  out+=`<path d="${segs(vals,x,y)}" fill="none" stroke="${css(color)}" stroke-width="1.3" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>`;
+  if(vals2)out+=`<path d="${segs(vals2,x,y)}" fill="none" stroke="${css(color2)}" stroke-width="1.1" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-opacity=".9"/>`;
+  out+='</svg>';return out;
+}
+function niceMax(v){if(!(v>0))return 1;const p=10**Math.floor(Math.log10(v));for(const m of [1,1.2,1.5,2,2.5,3,4,5,6,8,10])if(m*p>=v)return m*p;return 10*p}
+
+/* ---------- full chart with crosshair ---------- */
+const CHARTS=new Map();
+function chart(el,{series,unit,h=150,max,thr,mirror=false,fmt=f0,range}){
+  const w=Math.max(240,el.clientWidth||380),pad={l:36,r:6,t:8,b:20};
+  const n=series[0].v.length,t=series[0].t;
+  const all=series.flatMap(s=>s.v).filter(v=>v!=null);
+  const top=max??niceMax(Math.max(thr??0,...all,0)*1.08);
+  const ih=h-pad.t-pad.b,mid=mirror?pad.t+ih/2:null;
+  const x=i=>pad.l+i*(w-pad.l-pad.r)/(n-1);
+  const y=mirror?(v=>mid-(v/top)*(ih/2)):(v=>pad.t+(1-v/top)*ih);
+  const y2=v=>mid+(v/top)*(ih/2);
+  let g=`<svg viewBox="0 0 ${w} ${h}" height="${h}" role="img" aria-label="${esc(series.map(s=>s.label).join('、'))}趋势">`;
+  const ticks=mirror?[top,top/2,0,top/2,top]:[top,top*.75,top*.5,top*.25,0];
+  ticks.forEach((v,i)=>{const yy=mirror?pad.t+i*ih/4:y(v);g+=`<line class="grid" x1="${pad.l}" x2="${w-pad.r}" y1="${yy}" y2="${yy}" ${i===ticks.length-1||(mirror&&i===2)?'':'stroke-dasharray="1 3"'}/><text x="${pad.l-6}" y="${yy+3}" text-anchor="end">${fmt(v)}</text>`});
+  // missing samples = shaded columns, never interpolated
+  let gs=-1;for(let i=0;i<=n;i++){const miss=i<n&&series.every(s=>s.v[i]==null);if(miss&&gs<0)gs=i;if(!miss&&gs>=0){g+=`<rect class="gap" x="${x(Math.max(0,gs-.5))}" y="${pad.t}" width="${Math.max(2,x(Math.min(n-1,i-.5))-x(Math.max(0,gs-.5)))}" height="${ih}"/>`;gs=-1}}
+  if(thr!=null&&thr<=top)g+=`<line class="thr" x1="${pad.l}" x2="${w-pad.r}" y1="${y(thr)}" y2="${y(thr)}"/><text x="${w-pad.r}" y="${y(thr)-4}" text-anchor="end" style="fill:var(--lightloss)">${thr} ${unit}</text>`;
+  [0,Math.floor((n-1)/3),Math.floor((n-1)*2/3),n-1].forEach((i,k)=>g+=`<text x="${x(i)}" y="${h-5}" text-anchor="${k===0?'start':k===3?'end':'middle'}">${tlabel(t[i],range)}</text>`);
+  series.forEach((s,si)=>{const yy=mirror&&si===1?y2:y,base=mirror?mid:pad.t+ih;
+    if(s.area)g+=`<path d="${areas(s.v,x,yy,base)}" fill="${css(s.color)}" fill-opacity=".13"/>`;
+    g+=`<path d="${segs(s.v,x,yy)}" fill="none" stroke="${css(s.color)}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>`;
+    const lv=last(s.v);if(lv!=null){const li=s.v.lastIndexOf(lv);g+=`<circle cx="${x(li)}" cy="${yy(lv)}" r="2.8" fill="${css(s.color)}" stroke="var(--surface)" stroke-width="1.5"/>`}});
+  g+=`<g class="xh-g" visibility="hidden"><line class="xh" y1="${pad.t}" y2="${pad.t+ih}"/>${series.map(s=>`<circle r="3.2" fill="${css(s.color)}" stroke="var(--surface)" stroke-width="1.5"/>`).join('')}</g>`;
+  g+=`<rect x="${pad.l}" y="0" width="${w-pad.l-pad.r}" height="${h}" fill="transparent" class="hit"/></svg>`;
+  el.innerHTML=g+`<div class="readout"></div>`;
+  const ro=el.querySelector('.readout'),xg=el.querySelector('.xh-g'),line=xg.querySelector('line'),dots=xg.querySelectorAll('circle');
+  const show=i=>{
+    const parts=series.map(s=>`<span><i style="display:inline-block;width:8px;height:2px;background:${css(s.color)};vertical-align:3px;margin-right:4px"></i>${s.label} <b>${s.v[i]==null?'—':fmt(s.v[i])}</b> ${s.v[i]==null?'':unit}</span>`).join('');
+    ro.innerHTML=`<span class="t">${tlabel(t[i],range==='7d'?'7d':'1h')}${range==='7d'?' '+hhmm(t[i]):''}</span>${parts}`;
+  };
+  const lastIdx=Math.max(0,...series.map(s=>s.v.lastIndexOf(last(s.v))));
+  show(lastIdx);
+  el.querySelector('.hit').addEventListener('pointermove',e=>{
+    const r=el.querySelector('svg').getBoundingClientRect(),px=(e.clientX-r.left)*(w/r.width);
+    const i=clamp(Math.round((px-pad.l)/((w-pad.l-pad.r)/(n-1))),0,n-1);
+    xg.setAttribute('visibility','visible');line.setAttribute('x1',x(i));line.setAttribute('x2',x(i));
+    series.forEach((s,si)=>{const v=s.v[i];const d=dots[si];if(v==null){d.setAttribute('visibility','hidden')}else{d.setAttribute('visibility','visible');d.setAttribute('cx',x(i));d.setAttribute('cy',(mirror&&si===1?y2:y)(v))}});
+    show(i);
+  });
+  el.querySelector('.hit').addEventListener('pointerleave',()=>{xg.setAttribute('visibility','hidden');show(lastIdx)});
+}
+
+/* ---------- views ---------- */
+function rows(){
+  const q=state.q.trim().toLowerCase();
+  return NODES.map(nd=>({nd,cur:current(nd)})).filter(({nd,cur})=>
+    (state.region==='all'||nd.region===state.region)&&
+    (state.status==='all'||(state.status==='attention'?cur.status!=='online':cur.status===state.status))&&
+    [nd.name,nd.city,nd.cc,nd.os,nd.role,nd.region].join(' ').toLowerCase().includes(q));
+}
+const minLat=cur=>{const v=cur.q.map(x=>x.lat).filter(x=>x!=null);return v.length?Math.min(...v):Infinity};
+function sorted(list){
+  const by={weight:(a,b)=>b.nd.w-a.nd.w,cpu:(a,b)=>(b.cur.cpu??-1)-(a.cur.cpu??-1),lat:(a,b)=>minLat(a.cur)-minLat(b.cur),net:(a,b)=>((b.cur.rx??0)+(b.cur.tx??0))-((a.cur.rx??0)+(a.cur.tx??0)),name:(a,b)=>a.nd.name.localeCompare(b.nd.name)}[state.sort];
+  return list.sort(by);
+}
+const meter=(label,v,color)=>`<div class="mtr ${v!=null&&v>=80?'hot':''}" style="--c:${css(color)}" title="${label} ${f1(v)}%"><span class="num">${f0(v)}<small>%</small></span><span class="bar"><i style="width:${v??0}%"></i></span></div>`;
+function qLines(nd,cur,bins){
+  return CARRIERS.map((c,ci)=>{const q=cur.q[ci];return `<div class="q-line"><span>${c.s}</span><div class="strip" data-node="${nd.id}" data-c="${ci}">${bins[ci].map((b,bi)=>`<i class="g-${b.g}" data-b="${bi}"></i>`).join('')}</div><span class="num">${f0(q.lat)}<small>ms</small></span><span class="ls ${q.loss>=5?'bad':''}">${q.loss==null?'—':q.loss.toFixed(1)+'%'}</span></div>`}).join('');
+}
+function netCell(nd,cur,s){
+  return `<div class="net"><span class="arr">↓</span><span class="num">${rate(cur.rx)[0]}<small>${rate(cur.rx)[1]}</small></span><span class="arr">↑</span><span class="num">${rate(cur.tx)[0]}<small>${rate(cur.tx)[1]}</small></span>${spark(s.rx,{w:120,h:16,color:'--c-rx',vals2:s.tx,color2:'--c-tx'})}</div>`;
+}
+function nameCell(nd,cur){
+  const tag=cur.status==='offline'?'<span class="tag warn">离线</span>':cur.status==='stale'?'<span class="tag">过期</span>':'';
+  return `<div class="nm"><span class="st" data-s="${cur.status}" title="${SLABEL[cur.status]}"></span><div><b>${esc(nd.name)} · ${esc(nd.city)}${tag}</b><span class="sub">${nd.cc} · ${esc(nd.os)} · ${nd.v6?'v4 / v6':'v4'}</span></div></div>`;
+}
+function renderMatrix(){
+  const mx=$('#mx'),list=sorted(rows());
+  if(!list.length){mx.innerHTML=`<div style="padding:40px;text-align:center;color:var(--muted)">没有匹配的节点。<button class="pill" id="reset" style="margin-left:8px">重置筛选</button></div>`;$('#reset').onclick=()=>{state.q='';$('#q').value='';state.region='all';state.status='all';renderAll()};return}
+  if(state.view==='cards'){
+    mx.innerHTML=`<div class="cards">${list.map(({nd,cur})=>{const s=DATA[state.range][nd.id],bins=binsFor(nd,state.range,30);
+      return `<div class="card" role="button" tabindex="0" data-id="${nd.id}" aria-selected="${state.sel===nd.id}">${nameCell(nd,cur)}<div class="res">${meter('CPU',cur.cpu,'--c-cpu')}${meter('内存',cur.mem,'--c-mem')}${meter('磁盘',cur.dsk,'--c-disk')}</div>${netCell(nd,cur,s)}<div class="qcol">${qLines(nd,cur,bins)}</div></div>`}).join('')}</div>`;
+  }else{
+    const groups=state.sort==='weight'?REGIONS.map(r=>[r,list.filter(x=>x.nd.region===r)]).filter(g=>g[1].length):[[null,list]];
+    let html=`<div class="mx-h" role="row"><span>节点</span><span class="res"><span>CPU</span><span>内存</span><span>磁盘</span></span><span>网络 · ${state.range}</span><span class="qh"><span></span><span>三网质量 · ${state.range} · 左旧右新</span><span>延迟</span><span>失败</span></span><span class="uh" style="text-align:right">运行 / 负载</span></div>`;
+    for(const [rg,items] of groups){
+      if(rg){const on=items.filter(x=>x.cur.fresh).length,lats=items.map(x=>minLat(x.cur)).filter(Number.isFinite).sort((a,b)=>a-b);
+        html+=`<div class="grp"><b>${rg}</b><span class="num">${on}/${items.length} 在线</span><span>中位最低延迟 <span class="num">${lats.length?lats[Math.floor(lats.length/2)]:'—'} ms</span></span><hr></div>`}
+      for(const {nd,cur} of items){const s=DATA[state.range][nd.id],bins=binsFor(nd,state.range);
+        html+=`<div class="mx-r ${cur.fresh?'':'dim'}" role="row" tabindex="0" data-id="${nd.id}" aria-selected="${state.sel===nd.id}" aria-label="${esc(nd.name+' '+nd.city+' '+SLABEL[cur.status])}">
+          ${nameCell(nd,cur)}
+          <div class="res">${meter('CPU',cur.cpu,'--c-cpu')}${meter('内存',cur.mem,'--c-mem')}${meter('磁盘',cur.dsk,'--c-disk')}</div>
+          ${netCell(nd,cur,s)}
+          <div class="qcol">${qLines(nd,cur,bins)}</div>
+          <div class="upt"><span class="num">${cur.fresh?nd.up:'—'}</span><span class="label num">${cur.fresh?(cur.cpu/100*nd.vcpu*1.1).toFixed(2):'—'}</span></div>
+        </div>`}
+    }
+    mx.innerHTML=html;
+  }
+}
+
+function renderBand(){
+  const all=NODES.map(nd=>({nd,cur:current(nd)}));
+  const on=all.filter(x=>x.cur.fresh),att=all.filter(x=>x.cur.status!=='online');
+  const S=DATA[state.range],n=RANGES[state.range].n;
+  const avg=Array.from({length:n},(_,i)=>{const v=NODES.map(nd=>S[nd.id].cpu[i]).filter(v=>v!=null);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null});
+  const sum=k=>Array.from({length:n},(_,i)=>{const v=NODES.map(nd=>S[nd.id][k][i]).filter(v=>v!=null);return v.length?v.reduce((a,b)=>a+b,0):null});
+  const rx=on.reduce((a,x)=>a+(x.cur.rx??0),0),tx=on.reduce((a,x)=>a+(x.cur.tx??0),0);
+  const cpuNow=on.length?on.reduce((a,x)=>a+x.cur.cpu,0)/on.length:null;
+  const med=ci=>{const v=on.map(x=>x.cur.q[ci].lat).filter(v=>v!=null).sort((a,b)=>a-b);return v.length?v[Math.floor(v.length/2)]:null};
+  const dist={normal:0,slow:0,lightloss:0,loss:0,failed:0,unknown:0};let tot=0;
+  for(const nd of NODES)for(const row of binsFor(nd,state.range))for(const b of row){dist[b.g]++;tot++}
+  const okPct=(dist.normal/Math.max(1,tot-dist.unknown)*100);
+  const tin=NODES.reduce((a,n)=>a+n.tin,0),tout=NODES.reduce((a,n)=>a+n.tout,0);
+  $('#band').innerHTML=`
+  <div class="cell"><span class="label">在线节点</span><span class="big">${on.length}<small>/ ${NODES.length}</small></span>
+    <div class="dots">${all.map(({nd,cur})=>`<i data-tip="${esc(nd.name+' · '+nd.city+' — '+SLABEL[cur.status])}" style="background:${css({online:'--ok',attention:'--lightloss',warning:'--lightloss',offline:'--fail',stale:'--unknown'}[cur.status])}"></i>`).join('')}</div></div>
+  <div class="cell"><span class="label">需要留意</span><span class="big" style="color:${att.length?css('--loss'):'inherit'}">${att.length}<small>个节点</small></span>
+    <div class="chips">${att.slice(0,3).map(({nd,cur})=>`<span>${esc(nd.name)} <em>· ${SLABEL[cur.status]}</em></span>`).join('')||'<span><em>全部正常</em></span>'}</div></div>
+  <div class="cell"><span class="label">平均 CPU · ${state.range}</span><span class="big num-d">${f1(cpuNow)}<small>%</small></span>${spark(avg,{w:160,h:26,color:'--c-cpu',max:100})}</div>
+  <div class="cell"><span class="label">即时吞吐 · 全部在线节点</span><div class="row2" style="align-items:baseline;justify-content:flex-start;gap:14px"><span class="big">${rate(rx)[0]}<small>${rate(rx)[1]} ↓</small></span><span class="num" style="font-size:14px">${rateS(tx)} <span class="unit">↑</span></span></div>${spark(sum('rx'),{w:200,h:26,color:'--c-rx',vals2:sum('tx'),color2:'--c-tx'})}</div>
+  <div class="cell"><span class="label">三网中位延迟 · 当前</span>${CARRIERS.map((c,ci)=>{const m=med(ci);return `<div class="ctr"><span>${c.name}</span><span class="bar"><i style="width:${m==null?0:Math.min(100,m/500*100)}%;background:${css(c.c)}"></i></span><span class="num">${f0(m)}<small>ms</small></span></div>`}).join('')}</div>
+  <div class="cell"><span class="label">线路正常率 · ${state.range} 时间条</span><span class="big">${okPct.toFixed(1)}<small>%</small></span>
+    <div class="dist">${Object.entries(dist).filter(([,v])=>v).map(([g,v])=>`<i class="g-${g}" style="flex:${v}" data-tip="${GLABEL[g]} ${v} 段 · ${(v/tot*100).toFixed(1)}%"></i>`).join('')}</div>
+    <span class="label">本月 ↓ ${bytesG(tin)} · ↑ ${bytesG(tout)}</span></div>`;
+}
+
+function renderInspector(){
+  const nd=NODES.find(n=>n.id===state.sel)||NODES[0],cur=current(nd),s=DATA[state.range][nd.id],range=state.range;
+  const bins=binsFor(nd,range,48);
+  $('#insp').innerHTML=`
+  <div class="ih">
+    <svg class="pod" viewBox="0 0 128 128" aria-hidden="true"><path fill="currentColor" d="M16 64C16 42 30 30 52 28C62 27 74 28 86 34C104 43 116 52 116 64C116 76 104 85 86 94C74 100 62 101 52 100C30 98 16 86 16 64Z"/><g fill="var(--surface)"><circle cx="42" cy="64" r="8.5"/><circle cx="64" cy="62.5" r="9.5"/><circle cx="86" cy="64" r="8.5"/></g></svg>
+    <div style="min-width:0"><h2 id="ititle">${esc(nd.name)} · ${esc(nd.city)}</h2><p>${nd.cc} / ${nd.region} · ${esc(nd.role)} · ${nd.vcpu} vCPU / ${nd.ram} GiB / ${nd.disk} GiB</p>
+    <span class="status" data-s="${cur.status}">${SLABEL[cur.status]}${cur.fresh?'':` · ${nd.offline?'最后心跳 '+Math.round(cur.lastSeen/60)+' 分钟前':'超过 60 秒未更新'}`}</span></div>
+    <button class="icon-btn close" id="close" aria-label="关闭详情"><svg viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6"/></svg></button>
+  </div>
+  <div class="kpis">
+    ${[['CPU',cur.cpu,'--c-cpu','%'],['内存',cur.mem,'--c-mem','%'],['磁盘',cur.dsk,'--c-disk','%']].map(([l,v,c])=>`<div class="kpi" style="--c:${css(c)}"><span class="label">${l}</span><span class="num" style="${v>=80?'color:var(--loss)':''}">${f1(v)}<small>%</small></span><span class="bar"><i style="width:${v??0}%;${v>=80?'background:var(--loss)':''}"></i></span></div>`).join('')}
+    <div class="kpi"><span class="label">连接 TCP+UDP</span><span class="num">${f0(cur.conn)}</span><span class="label num" style="font-size:10.5px">负载 ${cur.fresh?(cur.cpu/100*nd.vcpu*1.1).toFixed(2):'—'}</span></div>
+  </div>
+  <div class="sec"><div class="sec-h"><h3>三网延迟</h3><div class="legend">${CARRIERS.map(c=>`<span><i style="background:${css(c.c)}"></i>${c.name}</span>`).join('')}</div></div><div class="chart" id="cLat"></div></div>
+  <div class="sec"><div class="sec-h"><h3>线路质量时间条</h3><span class="label" style="margin-left:auto">每格取桶内最差 · 斜纹为缺采</span></div>
+    <div class="big-strips">${CARRIERS.map((c,ci)=>`<span>${c.name}</span><div class="strip" data-node="${nd.id}" data-c="${ci}" data-n="48">${bins[ci].map((b,bi)=>`<i class="g-${b.g}" data-b="${bi}"></i>`).join('')}</div>`).join('')}</div>
+    <div class="legend" style="margin-top:9px">${['normal','slow','lightloss','loss','failed','unknown'].map(g=>`<span><i class="g-${g}"></i>${GLABEL[g]}</span>`).join('')}</div></div>
+  <div class="sec"><div class="sec-h"><h3>资源</h3><div class="legend"><span><i style="background:var(--c-cpu)"></i>CPU</span><span><i style="background:var(--c-mem)"></i>内存</span><span><i style="background:var(--c-disk)"></i>磁盘</span></div></div><div class="chart" id="cRes"></div></div>
+  <div class="sec"><div class="sec-h"><h3>网络</h3><div class="legend"><span><i style="background:var(--c-rx)"></i>接收 ↑ 上半</span><span><i style="background:var(--c-tx)"></i>发送 ↓ 下半</span></div></div><div class="chart" id="cNet"></div></div>
+  <div class="sec"><div class="sec-h"><h3>系统</h3></div><dl class="facts">
+    <dt>系统</dt><dd>${esc(nd.os)} · x86_64</dd><dt>运行时长</dt><dd>${cur.fresh?nd.up:'—'}</dd>
+    <dt>协议</dt><dd>${nd.v6?'IPv4 + IPv6':'仅 IPv4'}</dd><dt>本月流量</dt><dd>↓ ${bytesG(nd.tin)} · ↑ ${bytesG(nd.tout)}</dd>
+    <dt>实时速率</dt><dd>↓ ${rateS(cur.rx)} · ↑ ${rateS(cur.tx)}</dd><dt>数据窗口</dt><dd>${range} · ${RANGES[range].n} 桶 · 每桶 ${RANGES[range].step>=3600?RANGES[range].step/3600+' h':RANGES[range].step>=60?RANGES[range].step/60+' min':RANGES[range].step+' s'}</dd>
+  </dl></div>`;
+  const t=s.t;
+  chart($('#cLat'),{series:CARRIERS.map(c=>({label:c.name,color:c.c,v:s.lat[c.k],t})),unit:'ms',h:150,thr:300,range});
+  chart($('#cRes'),{series:[{label:'CPU',color:'--c-cpu',v:s.cpu,t,area:true},{label:'内存',color:'--c-mem',v:s.mem,t},{label:'磁盘',color:'--c-disk',v:s.dsk,t}],unit:'%',h:120,max:100,thr:80,range});
+  const mx=niceMax(Math.max(...s.rx.filter(v=>v!=null),...s.tx.filter(v=>v!=null),.01)*1.05);
+  chart($('#cNet'),{series:[{label:'接收',color:'--c-rx',v:s.rx,t,area:true},{label:'发送',color:'--c-tx',v:s.tx,t,area:true}],unit:'MiB/s',h:128,max:mx,mirror:true,fmt:v=>v>=10?v.toFixed(0):v.toFixed(v>=1?1:2),range});
+  $('#close').onclick=closeSheet;
+}
+
+function renderHeat(){
+  const m=state.heat,range=state.range,cols=48;
+  const ns=sorted(rows().length?rows():NODES.map(nd=>({nd,cur:current(nd)}))).map(x=>x.nd);
+  const val=(s,i)=>m==='cpu'?s.cpu[i]:m==='lat'?(()=>{const v=CARRIERS.map(c=>s.lat[c.k][i]).filter(v=>v!=null);return v.length?Math.min(...v):null})():(()=>{const v=CARRIERS.map(c=>s.loss[c.k][i]).filter(v=>v!=null);return v.length?Math.max(...v):null})();
+  const top=m==='cpu'?100:m==='lat'?400:10,hue=m==='cpu'?'--accent':m==='lat'?'--slow':'--loss';
+  const fmt=v=>v==null?'无数据':m==='cpu'?v.toFixed(1)+'%':m==='lat'?Math.round(v)+' ms':v.toFixed(1)+'%';
+  let html='<div class="hm">';
+  for(const nd of ns){const s=DATA[range][nd.id],n=s.t.length;
+    html+=`<span class="nmc" data-id="${nd.id}">${esc(nd.name)} · ${esc(nd.city)}</span><div class="cells">`;
+    for(let b=0;b<cols;b++){const a=Math.floor(b*n/cols),z=Math.max(a+1,Math.floor((b+1)*n/cols));const vs=[];for(let i=a;i<z;i++){const v=val(s,i);if(v!=null)vs.push(v)}
+      const v=vs.length===z-a?(m==='cpu'?vs.reduce((x,y)=>x+y,0)/vs.length:Math.max(...vs)):null;
+      const pct=v==null?0:Math.round(clamp(v/top,0,1)**.8*100);
+      html+=v==null?`<i class="g-unknown" data-tip="${esc(nd.name)} · ${tlabel(s.t[a],range)} · 无数据"></i>`:`<i style="background:color-mix(in oklab,var(${hue}) ${Math.max(6,pct)}%,var(--heat-lo))" data-tip="${esc(nd.name)} · ${tlabel(s.t[a],range)}${range==='7d'?' '+hhmm(s.t[a]):''} · ${fmt(v)}"></i>`}
+    html+='</div>'}
+  const t0=DATA[range][NODES[0].id].t;
+  html+=`<span></span><div class="axis"><span>${tlabel(t0[0],range)}</span><span>${tlabel(t0[Math.floor(t0.length/2)],range)}</span><span>现在</span></div></div>`;
+  $('#heat').innerHTML=html;
+  $('#scale').innerHTML=`<span>0</span><span class="g" style="background:linear-gradient(90deg,var(--heat-lo),var(${hue}))"></span><span>${m==='cpu'?'100%':m==='lat'?'≥ 400 ms':'≥ 10%'}</span>`;
+}
+
+function renderEvents(){
+  const range=state.range,ev=[];
+  for(const nd of NODES){const s=DATA[range][nd.id],n=s.t.length;
+    let prevC=null,prevOn=true;
+    for(let i=1;i<n;i++){
+      const on=s.cpu[i]!=null;
+      if(prevOn&&!on&&s.cpu[i-1]!=null){const gap=GAP[range]&&i>=GAP[range][0]&&i<=GAP[range][1];if(!gap)ev.push({t:s.t[i],nd,k:'fail',txt:nd.stale?'心跳停止更新':'离线 · 心跳中断'})}
+      prevOn=on;
+      if(s.cpu[i]!=null&&s.cpu[i]>=80&&s.cpu[i-1]!=null&&s.cpu[i-1]<80&&(prevC==null||i-prevC>6)){ev.push({t:s.t[i],nd,k:'lightloss',txt:`CPU 升至 ${s.cpu[i].toFixed(0)}%`});prevC=i}
+      CARRIERS.forEach(c=>{const g=grade(s.lat[c.k][i],s.loss[c.k][i]),gp=grade(s.lat[c.k][i-1],s.loss[c.k][i-1]);
+        if((g==='loss'||g==='failed')&&gp!=='loss'&&gp!=='failed'&&gp!=='unknown')ev.push({t:s.t[i],nd,k:g==='failed'?'fail':'loss',txt:`${c.name} ${g==='failed'?'探测全部失败':'失败率 '+s.loss[c.k][i].toFixed(1)+'%'}`})});
+    }}
+  if(GAP[range])ev.push({t:DATA[range][NODES[0].id].t[GAP[range][0]],nd:null,k:'unknown',txt:`采集缺口 ${GAP[range][1]-GAP[range][0]+1} 桶 · 全部节点留空`});
+  ev.sort((a,b)=>b.t-a.t);
+  const color={fail:'--fail',loss:'--loss',lightloss:'--lightloss',unknown:'--muted'};
+  $('#evCount').textContent=`${range} 内 ${ev.length} 条 · 由历史推导`;
+  $('#events').innerHTML=ev.slice(0,40).map(e=>`<li><time>${range==='7d'?tlabel(e.t,'7d'):hhmm(e.t)}</time><span class="dot" style="background:${css(color[e.k])}"></span><span>${e.nd?`<b data-id="${e.nd.id}" style="cursor:pointer">${esc(e.nd.name)}</b> `:''}<span class="why">${esc(e.txt)}</span></span></li>`).join('')||'<li><span></span><span></span><span class="why">窗口内没有状态变化。</span></li>';
+}
+
+function renderControls(){
+  const counts=r=>NODES.filter(n=>r==='all'||n.region===r).length;
+  $('#regions').innerHTML=[['all','全部'],...REGIONS.map(r=>[r,r])].map(([k,l])=>`<button class="pill" data-r="${k}" aria-pressed="${state.region===k}">${l} <b>${counts(k)}</b></button>`).join('');
+  const cur=NODES.map(current),att=cur.filter(c=>c.status!=='online').length;
+  $('#statuses').innerHTML=[['all','全部',null],['attention','留意','--lightloss'],['offline','离线','--fail']].map(([k,l,c])=>`<button class="pill" data-s="${k}" aria-pressed="${state.status===k}">${c?`<i class="sw" style="background:${css(c)}"></i>`:''}${l}${k==='attention'?` <b>${att}</b>`:k==='offline'?` <b>${cur.filter(c=>c.status==='offline').length}</b>`:''}</button>`).join('');
+  document.querySelectorAll('[data-range]').forEach(g=>g.innerHTML=Object.keys(RANGES).map(r=>`<button data-rg="${r}" aria-pressed="${state.range===r}">${r}</button>`).join(''));
+  document.querySelectorAll('#view button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.v===state.view));
+  document.querySelectorAll('#heatm button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.m===state.heat));
+  $('#sort').value=state.sort;
+}
+function renderAll(){
+  const focusId=document.activeElement?.closest?.('[data-id]')?.dataset.id;
+  renderControls();renderBand();renderMatrix();renderInspector();renderHeat();renderEvents();
+  $('#hCount').textContent=NODES.length;
+  $('#updated').textContent=hms(Date.now()/1000);
+  if(focusId)document.querySelector(`#mx [data-id="${focusId}"]`)?.focus({preventScroll:true});
+}
+
+/* ---------- interaction ---------- */
+const mq=matchMedia('(max-width:1100px)');
+function select(id){state.sel=id;document.querySelectorAll('#mx [data-id]').forEach(r=>r.setAttribute('aria-selected',r.dataset.id===id));renderInspector();if(mq.matches){document.body.classList.add('sheet');$('#insp').focus()}}
+function closeSheet(){document.body.classList.remove('sheet');document.querySelector(`#mx [data-id="${state.sel}"]`)?.focus()}
+document.addEventListener('click',e=>{
+  const rg=e.target.closest('[data-rg]');if(rg){state.range=rg.dataset.rg;renderAll();return}
+  const r=e.target.closest('[data-r]');if(r){state.region=r.dataset.r;renderControls();renderMatrix();renderHeat();return}
+  const s=e.target.closest('#statuses [data-s]');if(s){state.status=s.dataset.s;renderControls();renderMatrix();renderHeat();return}
+  const v=e.target.closest('#view [data-v]');if(v){state.view=v.dataset.v;try{localStorage.setItem('sg6-view',state.view)}catch{};renderControls();renderMatrix();return}
+  const hm=e.target.closest('#heatm [data-m]');if(hm){state.heat=hm.dataset.m;renderControls();renderHeat();return}
+  const id=e.target.closest('#mx [data-id],#heat [data-id],#events [data-id]');if(id){select(id.dataset.id);return}
+});
+$('#scrim').onclick=closeSheet;
+$('#sort').onchange=e=>{state.sort=e.target.value;renderMatrix();renderHeat()};
+$('#q').addEventListener('input',e=>{state.q=e.target.value;renderMatrix();renderHeat()});
+document.addEventListener('keydown',e=>{
+  if(e.key==='/'&&document.activeElement.tagName!=='INPUT'){e.preventDefault();$('#q').focus();return}
+  if(e.key==='Escape'){if(document.body.classList.contains('sheet'))closeSheet();else if(document.activeElement===$('#q')){$('#q').value='';state.q='';renderMatrix();renderHeat()}return}
+  const row=e.target.closest?.('#mx [data-id]');if(!row)return;
+  if(e.key==='Enter'||e.key===' '){e.preventDefault();select(row.dataset.id);return}
+  if(['ArrowDown','ArrowUp','j','k'].includes(e.key)){e.preventDefault();const all=[...document.querySelectorAll('#mx [data-id]')],i=all.indexOf(row),nx=all[clamp(i+(e.key==='ArrowDown'||e.key==='j'?1:-1),0,all.length-1)];nx.focus();select(nx.dataset.id)}
+});
+$('#theme').onclick=()=>{const root=document.documentElement,dark=root.dataset.theme?root.dataset.theme==='dark':matchMedia('(prefers-color-scheme:dark)').matches;root.dataset.theme=dark?'light':'dark';try{localStorage.setItem('sg6-theme',root.dataset.theme)}catch{};renderInspector()};
+
+/* tooltip for strips, heat cells, dots */
+const tip=$('#tip');
+function tipFor(el){
+  if(el.dataset.tip)return esc(el.dataset.tip);
+  const strip=el.parentElement;if(!strip?.dataset.node)return null;
+  const nd=NODES.find(n=>n.id===strip.dataset.node),c=CARRIERS[+strip.dataset.c],count=+(strip.dataset.n||(state.view==='cards'&&strip.closest('.card')?30:36));
+  const b=binsFor(nd,state.range,count)[+strip.dataset.c][+el.dataset.b];
+  const fmtT=t=>state.range==='7d'?tlabel(t,'7d')+' '+hhmm(t):hhmm(t);
+  return `<b>${esc(nd.name)} · ${c.name}</b><br>${fmtT(b.t0)} – ${fmtT(b.t1)}<br>${GLABEL[b.g]}${b.lat!=null?` · 最高 ${b.lat} ms · 失败 ${b.loss.toFixed(1)}%`:''}`;
+}
+document.addEventListener('pointerover',e=>{const el=e.target.closest('[data-tip],.strip i');if(!el){tip.hidden=true;return}const h=tipFor(el);if(!h){tip.hidden=true;return}tip.innerHTML=h;tip.hidden=false});
+document.addEventListener('pointermove',e=>{if(tip.hidden)return;const w=tip.offsetWidth,h=tip.offsetHeight;tip.style.left=clamp(e.clientX+12,8,innerWidth-w-8)+'px';tip.style.top=(e.clientY+16+h>innerHeight?e.clientY-h-10:e.clientY+16)+'px'});
+document.addEventListener('pointerleave',()=>tip.hidden=true);
+
+/* ---------- live tick: append one sample per 5 s to 1h ---------- */
+function tick(){
+  const now=Math.floor(Date.now()/1000);
+  for(const nd of NODES){if(nd.offline||nd.stale)continue;const s=DATA['1h'][nd.id],r=rng(hash(nd.id)+now);
+    const push=(arr,v)=>{arr.push(v);arr.shift()};
+    s.t.push(now);s.t.shift();
+    push(s.cpu,clamp(last(s.cpu)+(nd.cpu*(nd.ramp?1.35:1)-last(s.cpu))*.2+(r()-.5)*7,1,99));
+    push(s.mem,clamp(last(s.mem)+(r()-.5)*.8,5,99));push(s.dsk,last(s.dsk));
+    push(s.rx,Math.max(0,last(s.rx)+(nd.rx-last(s.rx))*.3+(r()-.5)*nd.rx*.5));push(s.tx,Math.max(0,last(s.tx)+(nd.tx-last(s.tx))*.3+(r()-.5)*nd.tx*.5));
+    push(s.conn,Math.max(1,Math.round(last(s.conn)+(r()-.5)*6)));
+    CARRIERS.forEach((c,ci)=>{const base=nd.lat[ci];push(s.lat[c.k],Math.round(base+(r()-.5)*base*.12+(r()<.03?120:0)));push(s.loss[c.k],nd.lossy===c.k&&r()<.12?+(2+r()*5).toFixed(1):0)});
+  }
+  for(const nd of NODES){if(nd.offline||nd.stale){const s=DATA['1h'][nd.id];s.t.push(now);s.t.shift();for(const k of ['cpu','mem','dsk','rx','tx','conn']){s[k].push(null);s[k].shift()}CARRIERS.forEach(c=>{s.lat[c.k].push(null);s.lat[c.k].shift();s.loss[c.k].push(null);s.loss[c.k].shift()})}}
+  if(state.range==='1h'){renderBand();if(!document.querySelector('#mx :hover'))renderMatrix();if(!$('#insp').matches(':hover'))renderInspector();renderHeat()}
+  else{renderBand()}
+  $('#updated').textContent=hms(now);
+  const ring=$('#ring');ring.style.animation='none';ring.getBoundingClientRect();ring.style.animation='';
+}
+setInterval(()=>$('#clock').textContent=hms(Date.now()/1000),1000);
+$('#clock').textContent=hms(Date.now()/1000);
+setInterval(tick,5000);
+let rz;addEventListener('resize',()=>{clearTimeout(rz);rz=setTimeout(renderInspector,120)});
+mq.addEventListener('change',()=>document.body.classList.remove('sheet'));
+renderAll();
+})();
+</script>
